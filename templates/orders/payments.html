@@ -31,8 +31,7 @@
                 <div class="card">
                     <h5 class="card-header">Payment Method</h5>
                     <div class="card-body">
-                        <p class="card-text">PayPal</p>
-
+                        <p class="card-text">{{payment_method | capfirst}}</p>
                     </div>
                 </div>
                 <div class="card">
@@ -109,11 +108,13 @@
                             <img src="{% static './images/misc/payments.png' %}" height="26">
                         </p>
 
-
-                        <div id="paypal-button-container">
-                            <!-- PayPal Button Will Load -->
-                        </div>
-
+                        {% if payment_method == "paypal" %}
+                            <div id="paypal-button-container">
+                              <!-- PayPal Button Will Load -->
+                            </div>
+                        {% else %}
+                            <a href="{%url 'cash_payment' order.order_number %}" class="btn btn-primary btn-block"> Place Order </a>
+                        {% endif %}
                     </div> <!-- card-body.// -->
                 </div> <!-- card.// -->
                 <div class="alert alert-danger" role="alert">

@@ -10,8 +10,79 @@ from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 
 
-def payments(request):
+def cash_payment(request, order_id):
+    order = Order.objects.get(user=request.user, is_ordered=False, order_number=order_id)
+    # Store transaction details inside Payment model
+    payment = Payment(
+        payment_id = request.user.id + order.id,
+        user = request.user,
+        payment_method = 'cash',
+        amount_paid = order.order_total,
+        status = 'Not Paid',
+    )
+
+    payment.save()
+
+    order.payment = payment
+    order.is_ordered = True
+    order.save()
+
+    # Move the cart items to Order Product table
+    cart_items = CartItem.objects.filter(user=request.user)
+
+    for item in cart_items:
+        orderproduct = OrderProduct()
+        orderproduct.order_id = order.id
+        orderproduct.payment = payment
+        orderproduct.user_id = request.user.id
+        orderproduct.product_id = item.product_id
+        orderproduct.quantity = item.quantity
+        orderproduct.product_price = item.product.price
+        orderproduct.ordered = True
+        orderproduct.save()
     
+    
+        cart_item = CartItem.objects.get(id=item.id)
+        product_variation = cart_item.variations.all()
+        orderproduct = OrderProduct.objects.get(id=orderproduct.id)
+        orderproduct.variations.set(product_variation)
+        orderproduct.save()
+
+
+        # Reduce the quantity of the sold products
+        product = Product.objects.get(id=item.product_id)
+        product.stock -= item.quantity
+        product.save()
+
+    # Clear cart
+    CartItem.objects.filter(user=request.user).delete()
+
+    # Send order received email to customer
+    mail_subject = 'Thank you for your order!'
+    message = render_to_string('orders/order_received_email.html', {
+        'user': request.user,
+        'order': order,
+    })
+    to_email = request.user.email
+    send_email = EmailMessage(mail_subject, message, to=[to_email])
+    send_email.send()
+
+    order_detail = OrderProduct.objects.filter(order__order_number=order_id)
+    order = Order.objects.get(order_number=order_id)
+    subtotal = 0
+    for i in order_detail:
+        subtotal += i.product_price * i.quantity
+    
+    context = {
+        'order_detail': order_detail,
+        'order': order,
+        'subtotal': subtotal,
+    }
+
+    return render(request, 'accounts/order_detail.html', context)
+    
+def payments(request):
+
     body = json.loads(request.body)
     order = Order.objects.get(user=request.user, is_ordered=False, order_number=body['orderID'])
 
@@ -74,7 +145,11 @@ def payments(request):
         'order_number': order.order_number,
         'transID': payment.payment_id,
     }
+
+      
     return JsonResponse(data)
+    
+    
     
 
 def place_order(request, total=0, quantity=0,):
@@ -125,12 +200,14 @@ def place_order(request, total=0, quantity=0,):
             data.save()
     
             order = Order.objects.get(user=current_user, is_ordered=False, order_number=order_number)
+            payment_method = request.POST['payment-method']
             context = {
                 'order': order,
                 'cart_items': cart_items,
                 'total': total,
                 'tax': tax,
                 'grand_total': grand_total,
+                'payment_method': payment_method
             }
             return render(request, 'orders/payments.html', context)
     else:
